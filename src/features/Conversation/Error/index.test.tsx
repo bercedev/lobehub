@@ -34,6 +34,7 @@ const createTopicForwardModalMock = vi.hoisted(() => vi.fn());
 const commitWorkingDirectoryMock = vi.hoisted(() => vi.fn());
 // Stands in for whatever card a downstream build installs into the business slot.
 const businessSlot = vi.hoisted(() => ({ render: false }));
+const resourceAccessMock = vi.hoisted(() => ({ canUseResource: true }));
 const missingTranslationKeys = vi.hoisted(() => new Set<string>());
 const businessErrorContentMock = vi.hoisted(() =>
   vi.fn(() => ({
@@ -147,6 +148,10 @@ vi.mock('@/features/Conversation/MessageForward/TopicForwardModal', () => ({
   createTopicForwardModal: createTopicForwardModalMock,
 }));
 
+vi.mock('@/features/Conversation/hooks/useConversationResourceAccess', () => ({
+  useConversationResourceAccess: () => resourceAccessMock,
+}));
+
 vi.mock('@/hooks/useProviderName', () => ({
   useProviderName: () => 'Mock Provider',
 }));
@@ -215,6 +220,7 @@ describe('ErrorMessageExtra', () => {
     detectHeterogeneousAgentCommandMock.mockResolvedValue({ available: true });
     missingTranslationKeys.clear();
     businessSlot.render = false;
+    resourceAccessMock.canUseResource = true;
     serverConfigMock.enableBusinessFeatures = false;
     shareContextMock.topicShareId = '';
     businessErrorContentMock.mockReturnValue({
@@ -510,9 +516,28 @@ describe('ErrorMessageExtra', () => {
 
     expect(screen.getByText('dynamic')).toBeInTheDocument();
     expect(dynamicComponentPropsMock).toHaveBeenCalledWith({
+      canCompact: true,
       id: 'msg-request-too-large',
       reason: 'requestBodyTooLarge',
     });
+  });
+
+  it('withholds context compaction from members who can only view the conversation', () => {
+    resourceAccessMock.canUseResource = false;
+
+    render(
+      <ErrorMessageExtra
+        error={{ message: 'response.RequestBodyTooLarge' }}
+        data={{
+          error: { type: AgentRuntimeErrorType.RequestBodyTooLarge } as any,
+          id: 'msg-request-too-large',
+        }}
+      />,
+    );
+
+    expect(dynamicComponentPropsMock).toHaveBeenCalledWith(
+      expect.objectContaining({ canCompact: false, reason: 'requestBodyTooLarge' }),
+    );
   });
 
   it('lets context compaction retry the group parent when the error is a nested block', () => {
@@ -529,6 +554,7 @@ describe('ErrorMessageExtra', () => {
     );
 
     expect(dynamicComponentPropsMock).toHaveBeenCalledWith({
+      canCompact: true,
       id: 'group-child-block',
       parentId: 'group-parent',
       reason: 'requestBodyTooLarge',
